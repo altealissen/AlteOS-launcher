@@ -1,0 +1,56 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip project
+        id: find
+        run: |
+          ZIP=$(ls ./*.zip 2>/dev/null | head -n1)
+          if [ -z "$ZIP" ]; then echo "В репозитории нет .zip файла с проектом"; exit 1; fi
+          echo "Распаковываю $ZIP"
+          mkdir -p _project
+          unzip -q -o "$ZIP" -d _project
+          SETTINGS=$(find _project -name settings.gradle.kts | head -n1)
+          if [ -z "$SETTINGS" ]; then echo "В архиве не найден settings.gradle.kts"; exit 1; fi
+          echo "dir=$(dirname "$SETTINGS")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+
+      - name: Build release APK
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: gradle assembleRelease --no-daemon
+
+      - name: Collect APK
+        run: cp "${{ steps.find.outputs.dir }}/app/build/outputs/apk/release/app-release.apk" AlteOS-Launcher.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AlteOS-Launcher-APK
+          path: AlteOS-Launcher.apk
+
+      - name: Publish to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: AlteOS Launcher (latest build)
+          files: AlteOS-Launcher.apk
