@@ -30,7 +30,8 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -38,7 +39,27 @@ jobs:
 
       - name: Build release APK
         working-directory: ${{ steps.find.outputs.dir }}
-        run: gradle assembleRelease --no-daemon
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle assembleRelease --no-daemon --console=plain 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+
+      - name: Error summary
+        if: failure()
+        run: |
+          {
+            echo '## Ошибки сборки (скопируй этот блок)'
+            echo '```'
+            grep -nE "^e: |What went wrong|Execution failed|Could not|FAILED" build.log | head -40
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload full log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
 
       - name: Collect APK
         run: cp "${{ steps.find.outputs.dir }}/app/build/outputs/apk/release/app-release.apk" AlteOS-Launcher.apk
